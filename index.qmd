@@ -1,0 +1,14 @@
+---
+title: "Hi, I'm Jackey"
+---
+![](me.jpg){width=40%}\
+Nice to meet you! My name is Jackey and I am currently a student at Baruch pursing a masters in Business Analytics as of Spring 2025 where I am developing skills in statistical analysis, data-driven decision-making, and business intellegence. I am passionate about applying analytical tools to optimize business performance and drive meaningful insights.\
+My hobbies include playing video games, rock climbing, reading books, and going to the gym.\
+Below I have attached my resume\
+[Here](Jackey Chen Resume.pdf)
+```{r}
+#| include: false
+1+1
+```
+--------------
+Last Updated: `r format(Sys.time(), "%A %m %d, %Y at %H:%M%p")`
