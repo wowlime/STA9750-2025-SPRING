@@ -13,8 +13,9 @@ website:
     
 format:
   html:
-    theme: slate
+    theme: lumen
     toc: false
 
 editor:
   mode: source
+
