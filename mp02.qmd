@@ -1,0 +1,572 @@
+---
+title: "GTA IV - Greener America Awards 2025"
+format: html
+author: "Jackey Chen"
+toc: true
+code-fold: true
+---
+```{r, include=FALSE}
+library(readr)
+library(dplyr)
+library(stringr)
+library(data.table)
+library(scales)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(tidyr)
+library(readxl)
+ensure_package <- function(pkg){
+  pkg <- as.character(substitute(pkg))
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+  if(!require(pkg, character.only=TRUE)) install.packages(pkg)
+  stopifnot(require(pkg, character.only=TRUE))
+}
+
+ensure_package(dplyr)
+ensure_package(stringr)
+ensure_package(tidyr)
+ensure_package(httr2)
+ensure_package(rvest)
+ensure_package(datasets)
+ensure_package(purrr)
+ensure_package(DT)
+ensure_package(readxl)
+
+get_eia_sep <- function(state, abbr){
+  state_formatted <- str_to_lower(state) |> str_replace_all("\\s", "")
+  
+  dir_name <- file.path("data", "mp02")
+  file_name <- file.path(dir_name, state_formatted)
+  
+  dir.create(dir_name, showWarnings=FALSE, recursive=TRUE)
+  
+  if(!file.exists(file_name)){
+    BASE_URL <- "https://www.eia.gov"
+    REQUEST <- request(BASE_URL) |> 
+      req_url_path("electricity", "state", state_formatted)
+    
+    RESPONSE <- req_perform(REQUEST)
+    
+    resp_check_status(RESPONSE)
+    
+    writeLines(resp_body_string(RESPONSE), file_name)
+  }
+  
+  TABLE <- read_html(file_name) |> 
+    html_element("table") |> 
+    html_table() |>
+    mutate(Item = str_to_lower(Item))
+  
+  if("U.S. rank" %in% colnames(TABLE)){
+    TABLE <- TABLE |> rename(Rank = `U.S. rank`)
+  }
+  
+  CO2_MWh <- TABLE |> 
+    filter(Item == "carbon dioxide (lbs/mwh)") |>
+    pull(Value) |> 
+    str_replace_all(",", "") |>
+    as.numeric()
+  
+  PRIMARY <- TABLE |> 
+    filter(Item == "primary energy source") |> 
+    pull(Rank)
+  
+  RATE <- TABLE |>
+    filter(Item == "average retail price (cents/kwh)") |>
+    pull(Value) |>
+    as.numeric()
+  
+  GENERATION_MWh <- TABLE |>
+    filter(Item == "net generation (megawatthours)") |>
+    pull(Value) |>
+    str_replace_all(",", "") |>
+    as.numeric()
+  
+  data.frame(CO2_MWh               = CO2_MWh, 
+             primary_source        = PRIMARY,
+             electricity_price_MWh = RATE * 10, # / 100 cents to dollars &
+             # * 1000 kWh to MWH 
+             generation_MWh        = GENERATION_MWh, 
+             state                 = state, 
+             abbreviation          = abbr
+  )
+}
+
+```
+
+The Green Transit Alliance for Investigation of Variance (GTA IV) is proud to present this years Greener America Awards, where we will be awarding public transit systems all across America for their contribution to environmental conciousness.\
+
+![](mp02green.PNG)\ [^2]
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Executive Summary</span>
+
+The US Public Transit System has always been the backbone of transportation in America, serving millions of people everyday all while staying aware of environmental hazards surrounding the use of transportation such as carbon emissions or air pollution. Today, the Green Transit Alliance for Investigation of Variance will be giving awards to honor and congratulate many public transit systems for their commitment to sustainability. We hope that this will inspire more transit systems in America and all around the world to keep the environment sustainable and create awareness on the matter.\
+
+The smaller agencies out there will not go unnoticed as well, here in GTA IV we have calculated ways to award not only the largest and most used public transits, but also small and medium sized ones for their hardwork in preservation to be recognized.\
+
+Now, drumroll please as we start the awards......🥁🥁🥁
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Greenest Transit Agency Award</span>
+![](mp02award1.webp){width=20%}\
+The winners of the Greenest Transit Agency Award are....\
+
+Small Agency: **City Of Long Beach**, with an emission of 0.0765 kilograms of C02 per UPT, with a median score of 2.77 kg of C02 per UPT for small agencies.[^1]\
+Medium Agency: **Whatcom Transportation Authority**, with an emission of 0.0242 kilograms of C02 per UPT, with a median of 1.33 kg of C02 per UPT for medium agencies.\
+Large Agency: **Central Florida Regional Transportation Authority**, with an emission of 0.000456 kilograms of C02 per UPT, with a median of 0.37 kg of C02 per UPT for large agencies.\
+
+The GTA IV calculated these statistics by computing the total kilograms of C02 emitted per gallon of different gases burned and then divided the total emissions by UPT to find which agencies emit the least amount of C02 by UPT.
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Most Emissions Avoided Award</span>
+![](mp02award2.webp){width=20%}\
+The winners of the Most Emissions Avoided Award are...\
+Small Agency: **Trans-Bridge Lines, Inc.** with 2925138 kilograms of C02 emissions avoided compared to the average standard, with the median emissions avoided being -303903.6 kg of C02 emissions for small agencies.\
+Medium Agency: **Intercity Transit** with 9092042 kilograms of C02 emission avoided compared to the average standard, with the median emissions avoided being -618120.8 kg of C02 emission for medium agencies.\
+Large Agency: **MTA New York City Transit** with 7299011485 kilograms of C02 emission avoided compared to the average standard, with the median emissions avoided being 7487465.4 kg of C02 emission for large agencies.\
+
+The GTA IV calculated these with the average miles per gallon being around 49 and the average amount of c02 being emitted per gallon being 8.887. Using these metrics, we calculated the hypothetical emissions and subtracted it from the total emissions to compare the total amount of emissions avoided.
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Gas Guzzlers Award</span>
+![](mp02award3.webp){width=20%}\
+While we want to recognize the public transit systems that are keeping the environment sustainable, it is also important to look at the ones that have the most inefficient fuel use and encourage them to do better in the future! The Gas Guzzler award is just that, and hopefully these transit systems are able to improve moving forward. The award goes to...\
+
+Small Agency: **Valley Regional Transit**, with 4.59 kilograms of C02 emission per mile, with the median emissions avoided being -303903.6 kg of C02 emissions for small agencies.\
+Medium Agency: **Mid Mon Valley Transit Authority** with 4.59 kilograms of C02 emission per mile, with the median emissions avoided being -618120.8 kg of C02 emission for medium agencies.\
+Large Agency: **Central Ohio Transit Authroity** with 2.61 kilograms of C02 emission per mile, with the median emissions avoided being 7487465.4 kg of C02 emission for large agencies.\
+
+The GTA IV calculated these by dividing the total emissions of all agencies by total amount of miles traveled by the agency. This allowed us to see which agencies in each size bracket emits the most per mile.
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Thank You!</span>
+These are all the awards we have for this year, but don't worry, there will be more next year! Hopefully these awards will motivate more public transit agencies to become environmentally conscious and help with sustainability for years to come. 
+
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Appendix</span>
+### <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Data Acquisition</span>
+The data sources used to obtain and examine the data are the following:\
+1. [The US Electricity Profile 2023 from the U.S. Energy Information Administration](https://www.eia.gov/electricity/state/)\
+2. [The 2023 Annual Database Energy Consumption from the Federal Transit Administration](https://www.transit.dot.gov/ntd/data-product/2023-annual-database-energy-consumption)\
+3.[The 2023 Service by Agency Report from the U.S. Office of Personnel Management](https://data.transportation.gov/resource/6y83-7vuw.csv)\
+4.[The Carbon Dioxide Emissions Coefficients from the U.S. Energy Information Administration](https://www.eia.gov/environment/emissions/co2_vol_mass.php)\
+
+### <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Initial Analysis and Organization</span>
+#### <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">EIA State Electricity Profiles</span>
+```{r}
+#| code-fold: true
+ensure_package(dplyr)
+ensure_package(stringr)
+ensure_package(tidyr)
+ensure_package(httr2)
+ensure_package(rvest)
+ensure_package(datasets)
+ensure_package(purrr)
+ensure_package(DT)
+ensure_package(readxl)
+
+get_eia_sep <- function(state, abbr){
+  state_formatted <- str_to_lower(state) |> str_replace_all("\\s", "")
+  
+  dir_name <- file.path("data", "mp02")
+  file_name <- file.path(dir_name, state_formatted)
+  
+  dir.create(dir_name, showWarnings=FALSE, recursive=TRUE)
+  
+  if(!file.exists(file_name)){
+    BASE_URL <- "https://www.eia.gov"
+    REQUEST <- request(BASE_URL) |> 
+      req_url_path("electricity", "state", state_formatted)
+    
+    RESPONSE <- req_perform(REQUEST)
+    
+    resp_check_status(RESPONSE)
+    
+    writeLines(resp_body_string(RESPONSE), file_name)
+  }
+  
+  TABLE <- read_html(file_name) |> 
+    html_element("table") |> 
+    html_table() |>
+    mutate(Item = str_to_lower(Item))
+  
+  if("U.S. rank" %in% colnames(TABLE)){
+    TABLE <- TABLE |> rename(Rank = `U.S. rank`)
+  }
+  
+  CO2_MWh <- TABLE |> 
+    filter(Item == "carbon dioxide (lbs/mwh)") |>
+    pull(Value) |> 
+    str_replace_all(",", "") |>
+    as.numeric()
+  
+  PRIMARY <- TABLE |> 
+    filter(Item == "primary energy source") |> 
+    pull(Rank)
+  
+  RATE <- TABLE |>
+    filter(Item == "average retail price (cents/kwh)") |>
+    pull(Value) |>
+    as.numeric()
+  
+  GENERATION_MWh <- TABLE |>
+    filter(Item == "net generation (megawatthours)") |>
+    pull(Value) |>
+    str_replace_all(",", "") |>
+    as.numeric()
+  
+  data.frame(CO2_MWh               = CO2_MWh, 
+             primary_source        = PRIMARY,
+             electricity_price_MWh = RATE * 10, # / 100 cents to dollars &
+             # * 1000 kWh to MWH 
+             generation_MWh        = GENERATION_MWh, 
+             state                 = state, 
+             abbreviation          = abbr
+  )
+}
+EIA_SEP_REPORT <- map2(state.name, state.abb, get_eia_sep) |> list_rbind()
+ensure_package(scales)
+ensure_package(DT)
+
+EIA_SEP_REPORT |> 
+    select(-abbreviation) |>
+    arrange(desc(CO2_MWh)) |>
+    mutate(CO2_MWh = number(CO2_MWh, big.mark=","), 
+           electricity_price_MWh = dollar(electricity_price_MWh), 
+           generation_MWh = number(generation_MWh, big.mark=",")) |>
+    rename(`Pounds of CO2 Emitted per MWh of Electricity Produced`=CO2_MWh, 
+           `Primary Source of Electricity Generation`=primary_source, 
+           `Average Retail Price for 1000 kWh`=electricity_price_MWh, 
+           `Total Generation Capacity (MWh)`= generation_MWh, 
+           State=state) |>
+    datatable()
+```
+**Question 1**: Which state has the most expensive retail electricity?\
+From the table, we can see Hawaii has the most expensive retail electricity costing an average of $386 per 1000 kWh.\
+
+**Question 2**: Which state has the ‘dirtiest’ electricity mix?\
+From the table, we can see the state with the dirtiest electricity mix is West Virginia, with 1925 pounds of CO2 emitted per MWh of electricity produced\
+
+**Question 3**: On average, how many pounds of CO2 are emitted per MWh of electricity produced in the US?\
+```{r}
+#| code-fold: true
+average_CO2_per_MWh <- EIA_SEP_REPORT |> 
+  summarise(weighted_avg_CO2 = sum(CO2_MWh * generation_MWh) / sum(generation_MWh))
+average_CO2_per_MWh |> 
+  kable(caption = "Average CO2 Emissions per MWh")
+```
+**Question 4**: What is the rarest primary energy source in the US? What is the associated cost of electricity and where is it used?\
+```{r}
+#| code-fold: true
+rarest_energy_source <- EIA_SEP_REPORT |> 
+  group_by(primary_source) |> 
+  summarise(total_generation = sum(generation_MWh, na.rm = TRUE)) |> 
+  filter(total_generation == min(total_generation, na.rm = TRUE))
+rarest_energy_source |> 
+  kable(caption = "Rarest Energy Source by Total Generation")
+```
+**Question 5**:Texas has a reputation as being the home of “dirty fossil fuels” while NY has a reputation as a leader in clean energy. How many times cleaner is NY’s energy mix than that of Texas?\
+```{r}
+#| code-fold: true
+ny_cleanliness <- EIA_SEP_REPORT |> 
+  filter(state == "New York") |> 
+  pull(CO2_MWh)
+
+tx_cleanliness <- EIA_SEP_REPORT |> 
+  filter(state == "Texas") |> 
+  pull(CO2_MWh)
+clean_ratio <- tx_cleanliness / ny_cleanliness
+clean_ratio_df <- data.frame(State_Comparison = c("Texas vs New York"), Clean_Ratio = clean_ratio)
+clean_ratio_df |> 
+  kable(caption = "CO2 per MWh Ratio: Texas vs New York")
+```
+#### <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">2023 Annual Database Energy Consumption</span>
+```{r}
+#| code-fold: true
+ensure_package(readxl)
+# Create 'data/mp02' directory if not already present
+DATA_DIR <- file.path("data", "mp02")
+dir.create(DATA_DIR, showWarnings=FALSE, recursive=TRUE)
+
+NTD_ENERGY_FILE <- file.path(DATA_DIR, "2023_ntd_energy.xlsx")
+
+if(!file.exists(NTD_ENERGY_FILE)){
+    DS <- download.file("https://www.transit.dot.gov/sites/fta.dot.gov/files/2024-10/2023%20Energy%20Consumption.xlsx", 
+                  destfile=NTD_ENERGY_FILE, 
+                  method="curl")
+    
+    if(DS | (file.info(NTD_ENERGY_FILE)$size == 0)){
+        cat("I was unable to download the NTD Energy File. Please try again.\n")
+        stop("Download failed")
+    }
+}
+
+NTD_ENERGY_RAW <- read_xlsx(NTD_ENERGY_FILE)
+```
+Cleaning data and updating all the modes
+```{r}
+#| code-fold: true
+ensure_package(tidyr)
+to_numeric_fill_0 <- function(x){
+    x <- if_else(x == "-", NA, x)
+    replace_na(as.numeric(x), 0)
+}
+
+NTD_ENERGY <- NTD_ENERGY_RAW |> 
+    select(-c(`Reporter Type`, 
+              `Reporting Module`, 
+              `Other Fuel`, 
+              `Other Fuel Description`)) |>
+    mutate(across(-c(`Agency Name`, 
+                     `Mode`,
+                     `TOS`), 
+                  to_numeric_fill_0)) |>
+    group_by(`NTD ID`, `Mode`, `Agency Name`) |>
+    summarize(across(where(is.numeric), sum), 
+              .groups = "keep") |>
+    mutate(ENERGY = sum(c_across(c(where(is.numeric))))) |>
+    filter(ENERGY > 0) |>
+    select(-ENERGY) |>
+    ungroup()
+NTD_ENERGY <- NTD_ENERGY |>
+  mutate(Mode = case_when(
+    Mode == "DR" ~ "Demand Response",
+    Mode == "FB" ~ "Ferryboat",
+    Mode == "MB" ~ "Bus",
+    Mode == "SR" ~ "Streetcar",
+    Mode == "TB" ~ "Trolleybus",
+    Mode == "VP" ~ "Vanpool",
+    Mode == "CB" ~ "Commuter Bus",
+    Mode == "RB" ~ "Bus Rapid Transit",
+    Mode == "LR" ~ "Light Rail",
+    Mode == "MG" ~ "Monorail/Automated Guideway",
+    Mode == "CR" ~ "Commuter Rail",
+    Mode == "AR" ~ "Alaska Railroad",
+    Mode == "TR" ~ "Aerial Tramway",
+    Mode == "HR" ~ "Heavy Rail",
+    Mode == "YR" ~ "Hybrid Rail",
+    Mode == "IP" ~ "Inclined Plane",
+    Mode == "PB" ~ "Publico",
+    Mode == "CC" ~ "Cable Car",
+    TRUE ~ "Unknown"
+  ))
+```
+#### <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">2023 Annual Database service by Agency</span>
+Importing and cleaning data
+```{r}
+#| code-fold: true
+NTD_SERVICE_FILE <- file.path(DATA_DIR, "2023_service.csv")
+if(!file.exists(NTD_SERVICE_FILE)){
+  DS <- download.file("https://data.transportation.gov/resource/6y83-7vuw.csv", 
+                      destfile=NTD_SERVICE_FILE, 
+                      method="curl")
+  
+  if(DS | (file.info(NTD_SERVICE_FILE)$size == 0)){
+    cat("I was unable to download the NTD Service File. Please try again.\n")
+    stop("Download failed")
+  }
+}
+
+NTD_SERVICE_RAW <- read_csv(NTD_SERVICE_FILE)
+NTD_SERVICE <- NTD_SERVICE_RAW |>
+  mutate(`NTD ID` = as.numeric(`_5_digit_ntd_id`)) |> 
+  rename(Agency = agency, 
+         City   = max_city, 
+         State  = max_state,
+         UPT    = sum_unlinked_passenger_trips_upt, 
+         MILES  = sum_passenger_miles) |>
+  select(matches("^[A-Z]", ignore.case=FALSE)) |>
+  filter(MILES > 0)
+```
+**Question 1**:Which transit service has the most UPT annually?\
+```{r}
+#| code-fold: true
+most_upt_service <- NTD_SERVICE |>
+  arrange(desc(UPT)) |>
+  slice(1) |>
+  select(Agency, City, State, UPT)
+most_upt_service |> 
+  kable(caption = "Agency with the Most UPT")
+```
+**Question 2**:What is the average trip length of a trip on MTA NYC?
+```{r}
+#| code-fold: true
+mta_nyc_avg_trip_length <- NTD_SERVICE |>
+  filter(grepl("MTA", Agency)) |>  
+  mutate(avg_trip_length = MILES / UPT) |>
+  summarize(avg_trip_length = mean(avg_trip_length, na.rm = TRUE))
+mta_nyc_avg_trip_length |> 
+  kable(caption = "Average Trip Length for MTA NYC")
+```
+**Question 3**:Which transit service in NYC has the longest average trip length?
+```{r}
+#| code-fold: true
+nyc_longest_trip <- NTD_SERVICE |>
+  filter(City %in% c("New York City", "Brooklyn")) |>
+  mutate(avg_trip_length = MILES / UPT) |>
+  arrange(desc(avg_trip_length)) |>
+  slice(1) |>
+  select(Agency, City, avg_trip_length)
+nyc_longest_trip |> 
+  kable(caption = "City with the Longest Average Trip Length in NYC")
+```
+**Question 4**:Which state has the fewest total miles travelled by public transit?
+```{r}
+#| code-fold: true
+state_fewest_miles <- NTD_SERVICE |>
+  group_by(State) |>
+  summarize(total_miles = sum(MILES, na.rm = TRUE)) |>
+  arrange(total_miles) |>
+  slice(1)
+state_fewest_miles |>
+  kable(caption = "State with the Fewest Total Miles")
+```
+**Question 5**:Are all states represented in this data? 
+```{r}
+#| code-fold: true
+all_states <- state.abb 
+missing_states <- setdiff(all_states, unique(NTD_SERVICE$State))
+
+missing_states |>
+  kable(caption = "States Missing from the NTD_Service Dataset")
+```
+#### <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Joining Datasets</span>
+```{r}
+#| code-fold: true
+colnames(NTD_SERVICE)[which(names(NTD_SERVICE) == "Agency")] <- "Agency Name"
+EIA_SEP_REPORT <- EIA_SEP_REPORT |> select(-state)
+NTD_SERVICE <- NTD_SERVICE |> mutate(State = as.character(State))
+EIA_SEP_REPORT <- EIA_SEP_REPORT |> mutate(abbreviation = as.character(abbreviation))
+combined_data <- NTD_SERVICE |> 
+  inner_join(NTD_ENERGY, by = c("NTD ID", "Agency Name"))
+final_data <- combined_data |> 
+  left_join(EIA_SEP_REPORT, by = c("State" = "abbreviation"))
+final_data |> 
+  head() |>
+  kable(caption = "Preview of Final Combined Data")
+```
+After joining the three tables, we used mutute to compute the total emissions for the row using data from the [EIA website](https://www.eia.gov/environment/emissions/co2_vol_mass.php).
+```{r}
+#| code-fold: true
+final_data <- final_data |> 
+  mutate(
+    total_emissions = (`Diesel Fuel` * 10.21) +
+      (`Gasoline` * 8.89) +
+      (`C Natural Gas` * 53.06) +
+      (`Liquified Petroleum Gas` * 5.79) +
+      (`Bio-Diesel` * 9.45) +
+      (`Ethanol` * 1.94) +
+      (`Hydrogen` * 0) +
+      (`Kerosene` * 9.75) +
+      (`Liquified Nat Gas` * 62.44) +
+      (`Bunker Fuel` * 10.96) +
+      (`Electric Battery` * CO2_MWh / 1000) +  # Convert to metric tons
+      (`Electric Propulsion` * CO2_MWh / 1000)
+  )
+```
+#### <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Normalizing Emissions to Transit Usage</span>
+We categorized the agencies by size by the UPT of each transit system, with systems that have over 5000000 considered large, 500000 to 5000000 considered medium, and anything less is a small agency. We also calculated the emissions per UPT and emissions per mile by dividing total emissions by UPT and dividing total_emissions by total miles.
+```{r}
+#| code-fold: true
+final_data <- final_data |> 
+  group_by(`Agency Name`) |> 
+  mutate(
+    emissions_per_UPT = total_emissions / UPT,
+    emissions_per_mile = total_emissions / MILES
+  ) |> 
+  ungroup()
+final_data <- final_data |> 
+  group_by(`Agency Name`) |> 
+  mutate(
+    agency_size = case_when(
+      UPT >= 5000000 ~ "Large",
+      UPT >= 500000 ~ "Medium",
+      TRUE ~ "Small"
+    )
+  ) |> 
+  ungroup()
+```
+**Code for Emissions per UPT**:
+```{r}
+#| code-fold: true
+most_efficient <- final_data |> 
+  group_by(agency_size, `Agency Name`) |> 
+  summarize(
+    avg_emissions_per_UPT = mean(emissions_per_UPT, na.rm = TRUE),
+    avg_emissions_per_mile = mean(emissions_per_mile, na.rm = TRUE)
+  ) |> 
+  arrange(agency_size, avg_emissions_per_UPT, avg_emissions_per_mile)
+best_efficiency <- most_efficient |> 
+  group_by(agency_size) |> 
+  slice_min(order_by = avg_emissions_per_UPT, n = 1)
+```
+**Greenest Agencies Calculation Code**\
+We calculated this by filtering by emissions_per_UPT to see the lowest for every agency size to get the 3 greenest agencies.
+```{r}
+#| code-fold: true
+median_emissions <- final_data |>
+  group_by(agency_size) |>
+  summarise(median_emissions_per_UPT = median(emissions_per_UPT, na.rm = TRUE))
+greenest_agencies <- final_data |>
+  group_by(agency_size) |>
+  filter(emissions_per_UPT == min(emissions_per_UPT, na.rm = TRUE)) |>
+  ungroup()
+greenest_agencies |>
+  select(`Agency Name`, agency_size, emissions_per_UPT) |>
+  left_join(median_emissions, by = "agency_size") |>
+  kable(caption = "Greenest Agencies and Median Emissions per UPT by Agency Size")
+median_emissions_fixed <- median_emissions |> distinct()
+
+ggplot(greenest_agencies |> left_join(median_emissions, by = "agency_size"), 
+       aes(x = agency_size, y = emissions_per_UPT, fill = `Agency Name`)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_hline(data = median_emissions_fixed, aes(yintercept = median_emissions_per_UPT, color = agency_size), 
+             linetype = "dashed", size = 1.2) +
+  scale_color_manual(values = c("Large" = "blue", "Medium" = "green", "Small" = "red")) + 
+  labs(title = "Greenest Agencies vs. Median Emissions per UPT",
+       x = "Agency Size", 
+       y = "Emissions per UPT",
+       fill = "Best Agency",
+       color = "Median Line") + 
+  theme_minimal()
+```
+From the plot, we are able to see the median emission per UPT from the line, while the bars represent the agencies with the lowest emission, showing how big of an impact they are making with lower emissions.
+**Most Emissions Avoided Award Calculation Code**\
+We calculated this by finding the average mile per gallon of a vehicle and the C02 emission per gallon and found the hypothetical emission by diving miles by average mile per gallon and then multiplying it by galloon. We then subtracted the hypothetical emissions by total emissions to see which agencies saved the most.
+```{r}
+#| code-fold: true
+fuel_economy_mpg <- 49
+co2_per_gallon <- 8.887
+final_data <- final_data |>
+  mutate(hypothetical_emissions = (MILES / fuel_economy_mpg) * co2_per_gallon,
+         emissions_avoided = hypothetical_emissions - total_emissions)
+most_emissions_avoided <- final_data |>
+  group_by(agency_size, `Agency Name`) |>
+  summarise(total_emissions_avoided = sum(emissions_avoided, na.rm = TRUE)) |>
+  arrange(desc(total_emissions_avoided)) |>
+  slice(1)
+median_emissions_avoided <- final_data |>
+  group_by(agency_size) |>
+  summarise(median_emissions_avoided = median(emissions_avoided, na.rm = TRUE))
+final_results <- most_emissions_avoided |>
+  left_join(median_emissions_avoided, by = "agency_size")
+kable(final_results, caption = "Agency with the Most Emissions Avoided and Median Emissions Avoided by Agency Size")
+```
+**Gas Guzzlers Award Calculation Code**\
+We calculated Gas Guzzlers by filtering to see which agencies emit the most C02 by mile.
+```{r}
+#| code-fold: true
+gas_guzzler_award <- final_data |>
+  group_by(agency_size) |>
+  filter(emissions_per_mile == max(emissions_per_mile, na.rm = TRUE)) |>
+  select(`Agency Name`, City, State, agency_size, emissions_per_mile, total_emissions)
+kable(gas_guzzler_award, caption = "Gas Guzzler Award - Agency with Highest Emissions Per Mile")
+ggplot(final_data, aes(x = agency_size, y = emissions_per_UPT, fill = agency_size)) + 
+  geom_boxplot() + 
+  scale_y_log10() + 
+  labs(title = "Distribution of Emissions per UPT by Agency Size", 
+       x = "Agency Size", 
+       y = "Emissions per UPT (log scale)") + 
+  theme_minimal()
+```
+We had to scale the plot using log because the values for large agencies were too big, then we are able to visualize the distributions per UPT by agency size and the dots represent outliers in those plots. Based off the graph, we can see the highest points, lowest points, and the median.
+
+[^1]: Unlinked Passenger Trips, the distinct number of trips taken on public transit. 
+[^2]: All images were created using Canva AI Image Generator
