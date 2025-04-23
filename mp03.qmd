@@ -1,0 +1,547 @@
+---
+title: "The Loverboy Playlist"
+format: html
+author: "Jackey Chen"
+toc: true
+code-fold: true
+---
+![](playlist.PNG){width=75%}
+```{r, include=FALSE}
+library(readr)
+library(dplyr)
+library(stringr)
+library(data.table)
+library(scales)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(tidyr)
+library(readxl)
+library(jsonlite)
+library(purrr)
+library(DT)
+ensure_package <- function(pkg){
+  pkg <- as.character(substitute(pkg))
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+  if(!require(pkg, character.only=TRUE)) install.packages(pkg)
+  stopifnot(require(pkg, character.only=TRUE))
+}
+
+ensure_package(dplyr)
+ensure_package(stringr)
+ensure_package(tidyr)
+ensure_package(httr2)
+ensure_package(rvest)
+ensure_package(datasets)
+ensure_package(purrr)
+ensure_package(DT)
+ensure_package(readxl)
+ensure_package(jsonlite)
+ensure_package(purrr)
+```
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Creating the Ultimate Playlist</span>
+The Loverboy Playlist is 12 carefully curated tracks meant to represent the journey of love and heartbreak, capturing the highs and lows of it all. Whether you are mending a broken heart or yearning for that feeling of love, this playlist will allow you to let all your emotions out and find comfort in knowing that everything will be okay in the end.
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Design Principles</span>
+**Heuristics**: I decided to use my favorite song as the anchor for this analysis, it being **The Way Life Goes (feat. Oh Wonder) by Lil Uzi Vert**. The songs were selected using basic heuristics such as shared playlist appearances, similar keys and tempos, same artist, same year with similar audio, and similar valence.\
+
+**Narrative**: Every song contributes to the emotional theme of love, loss, and growth. As the energy of the songs ramp up, so does the emotions, inviting listeners to feel vulnerable and accept all the good and bad that comes with being in love.\
+
+**Hidden Gems**: Among the 12 tracks, at least 5 are considered "not popular" (Spotify Popularity < 70), with hopes to highlight lesser known tracks. Through analysis I have also discovered 2 new tracks that I added to the playlist that conveyed the similar feelings.\
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Data Acquisition and cleaning</span>
+**Downloading Song Characteristic Data**
+```{r}
+#| code-fold: true
+load_songs <- function() {
+  url <- "https://raw.githubusercontent.com/gabminamedez/spotify-data/refs/heads/master/data.csv"
+  dir_path <- "data/mp03"
+  file_path <- file.path(dir_path, "spotify_data.csv")
+  
+
+  if (!dir.exists(dir_path)) {
+    dir.create(dir_path, recursive = TRUE)
+  }
+  
+
+  if (!file.exists(file_path)) {
+    message("Downloading Spotify song dataset...")
+    download.file(url, destfile = file_path, mode = "wb")
+  } else {
+    message("Using cached file.")
+  }
+  
+
+  songs_raw <- readr::read_csv(file_path, show_col_types = FALSE)
+  
+
+  clean_artist_string <- function(x){
+    x |>
+      stringr::str_replace_all("\\['", "") |>
+      stringr::str_replace_all("'\\]", "") |>
+      stringr::str_replace_all("[ ]?'", "") |>
+      stringr::str_replace_all("[ ]*,[ ]*", ",")
+  }
+  songs_clean <- songs_raw |>
+    tidyr::separate_longer_delim(artists, ",") |>
+    dplyr::mutate(artist = clean_artist_string(artists)) |>
+    dplyr::select(-artists)
+  
+  return(songs_clean)
+}
+SONGS <- load_songs()
+SONGS |>
+  select(name, artist, year, popularity, danceability, energy) |>
+  slice_head(n = 10) |>
+  knitr::kable(caption = "Sample of Cleaned Spotify Songs Data")
+```
+**Downloading Playlists Data**[^1]
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+#| echo: true
+load_playlists <- function(start = 0, stop = 300000, step = 1000) {
+  base_url <- "https://raw.githubusercontent.com/DevinOgrady/spotify_million_playlist_dataset/main/data1/"
+  local_dir <- "data/mp03/playlists"
+  
+  if (!dir.exists(local_dir)) {
+    dir.create(local_dir, recursive = TRUE)
+  }
+  
+  playlist_list <- list()
+  i <- 1
+  
+  for (start_val in seq(start, stop, by = step)) {
+    end_val <- start_val + step - 1
+    filename <- sprintf("mpd.slice.%d-%d.json", start_val, end_val)
+    file_path <- file.path(local_dir, filename)
+    file_url <- paste0(base_url, filename)
+    file_found <- TRUE
+    
+    if (!file.exists(file_path)) {
+      message("Attempting download: ", filename)
+      tryCatch({
+        download.file(file_url, destfile = file_path, mode = "wb")
+        message("Downloaded: ", filename)
+      }, error = function(e) {
+        message("Skipped (not found): ", filename)
+        file_found <<- FALSE
+      })
+    } else {
+      message("Using cached: ", filename)
+    }
+    if (file_found && file.exists(file_path)) {
+      json <- jsonlite::fromJSON(file_path, flatten = TRUE)
+      playlist_list[[i]] <- json$playlists
+      i <- i + 1
+    }
+  }
+  
+  return(dplyr::bind_rows(playlist_list))
+}
+playlists <- load_playlists(start = 0, stop = 10000, step = 1000)
+playlists |>
+  select(name, num_tracks, num_followers, duration_ms) |>
+  slice_head(n = 10) |>
+  knitr::kable(caption = "Sample of Loaded Playlist Metadata")
+```
+**Cleaning and Formatting Playlist Data**
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+#| echo: true
+rectangle_playlists <- function(playlist_df) {
+  strip_spotify_prefix <- function(x){
+    stringr::str_extract(x, ".*:.*:(.*)", group=1)
+  }
+  
+  playlist_df |>
+    tidyr::unnest(cols = tracks, names_sep = "_") |>
+    dplyr::mutate(
+      playlist_position  = dplyr::row_number(),
+      track_id           = strip_spotify_prefix(tracks_track_uri),
+      artist_id          = strip_spotify_prefix(tracks_artist_uri),
+      album_id           = strip_spotify_prefix(tracks_album_uri)
+    ) |>
+    dplyr::transmute(
+      playlist_name      = name,
+      playlist_id        = pid,
+      playlist_position,
+      playlist_followers = num_followers,
+      artist_name        = tracks_artist_name,
+      artist_id,
+      track_name         = tracks_track_name,
+      track_id,
+      album_name         = tracks_album_name,
+      album_id,
+      duration           = tracks_duration_ms
+    )
+}
+playlist_metadata <- load_playlists(start = 0, stop = 10000, step = 1000)
+
+rectangular_df <- rectangle_playlists(playlist_metadata)
+
+playlist_metadata <- load_playlists(start = 0, stop = 1999, step = 1000)
+str(playlist_metadata[[1]])
+rectangular_df <- rectangle_playlists(playlist_metadata)
+playlist_df <- bind_rows(playlist_metadata)
+track_df <- tidyr::unnest(playlist_df, cols = tracks, names_sep = "_")
+rectangular_df |>
+  select(
+    playlist_name,
+    track_name,
+    artist_name,
+    album_name,
+    duration,
+    playlist_followers
+  ) |>
+  slice_head(n = 10) |>
+  knitr::kable(caption = "Sample of Cleaned Playlist-Track Data")
+```
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Initial Analysis</span>
+We first had some initial exploration we wanted to do with the playlist dataset.\
+```{r}
+#| code-fold: true
+rectangular_df |>
+  dplyr::summarise(
+    unique_tracks = n_distinct(track_id),
+    unique_artists = n_distinct(artist_id)
+  ) |>
+  knitr::kable(caption = "Number of Unique Tracks and Artists")
+top_5_tracks <- rectangular_df |>
+  count(track_id, track_name, artist_name, sort = TRUE) |>
+  slice_head(n = 5)
+
+top_5_tracks |>
+  knitr::kable(caption = "Top 5 Most Frequently Appearing Tracks in Playlists")
+SONGS <- SONGS |> 
+  rename(track_id = id)
+
+missing_in_songs <- rectangular_df |>
+  dplyr::anti_join(SONGS, by = "track_id") |>
+  dplyr::count(track_name, sort = TRUE) |>
+  dplyr::slice_head(n = 1)
+
+missing_in_songs |>
+  knitr::kable(caption = "Most Frequently Appearing Track Missing from SONGS Data")
+most_danceable <- SONGS |>
+  dplyr::arrange(desc(danceability)) |>
+  dplyr::slice(1)
+
+most_danceable |>
+  select(name, artist, danceability, popularity, year) |>
+  knitr::kable(caption = "Most Danceable Track in the SONGS Dataset")
+appearance_count <- rectangular_df |>
+  dplyr::filter(track_id == most_danceable$track_id) |>
+  dplyr::count() |>
+  dplyr::rename(`Playlist Appearances` = n)
+
+appearance_count |>
+  knitr::kable(caption = "How Often the Most Danceable Track Appears in Playlists")
+longest_avg_playlist <- rectangular_df |>
+  dplyr::group_by(playlist_name, playlist_id) |>
+  dplyr::summarize(avg_duration = mean(duration, na.rm = TRUE), .groups = "drop") |>
+  dplyr::arrange(desc(avg_duration)) |>
+  dplyr::slice(1)
+
+longest_avg_playlist |>
+  dplyr::mutate(avg_duration = round(avg_duration / 60000, 2)) |>
+  dplyr::rename(`Average Track Duration (min)` = avg_duration) |>
+  knitr::kable(caption = "Playlist with the Longest Average Track Duration")
+most_followed <- rectangular_df |>
+  dplyr::distinct(playlist_id, playlist_name, playlist_followers) |>
+  dplyr::arrange(desc(playlist_followers)) |>
+  dplyr::slice(1)
+
+most_followed |>
+  knitr::kable(caption = "Most Followed Playlist in the Dataset")
+SONGS_unique <- SONGS |> 
+  distinct(track_id, .keep_all = TRUE)
+combined_df <- inner_join(rectangular_df, SONGS_unique, by = "track_id")
+```
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Analysis with Visualizations</span>
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+#| echo: true
+track_popularity <- combined_df |>
+  group_by(track_id, track_name, artist_name) |>
+  summarise(
+    playlist_appearances = n(),
+    avg_popularity = mean(popularity, na.rm = TRUE),
+    .groups = "drop"
+  )
+ggplot(track_popularity, aes(x = playlist_appearances, y = avg_popularity)) +
+  geom_point(alpha = 0.4, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  scale_x_log10() +  # log scale to handle skewed data
+  labs(
+    title = "Popularity vs Playlist Appearances",
+    x = "Playlist Appearances (log scale)",
+    y = "Spotify Popularity Score"
+  ) +
+  theme_minimal()
+```
+From the graph, we can interpret that as a song gets more popular, it will appear on playlists more.
+
+```{r}
+#| code-fold: true
+ggplot(combined_df, aes(x = popularity)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Spotify Popularity Scores",
+    x = "Popularity Score",
+    y = "Number of Tracks"
+  ) +
+  theme_minimal()
+```
+The popularity scores of the songs from the dataset seem to be a majority around the 50-75 scores.
+
+```{r}
+#| code-fold: true
+popular_threshold <- 65
+popular_songs <- combined_df |> filter(popularity >= popular_threshold)
+popular_songs |>
+  count(year) |>
+  ggplot(aes(x = year, y = n)) +
+  geom_col(fill = "forestgreen") +
+  labs(
+    title = "Most Popular Songs by Release Year",
+    x = "Release Year",
+    y = "Number of Popular Songs"
+  ) +
+  theme_minimal()
+```
+From the graph, we can tell that more songs are getting popular in recent times than in the past, where it was rarer for a song to become popular.
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+#| echo: true
+top_dance_year <- popular_songs |>
+  group_by(year) |>
+  summarise(avg_danceability = mean(danceability, na.rm = TRUE)) |>
+  arrange(desc(avg_danceability)) |>
+  slice(1)
+top_dance_year
+popular_songs |>
+  group_by(year) |>
+  summarise(avg_danceability = mean(danceability, na.rm = TRUE)) |>
+  ggplot(aes(x = year, y = avg_danceability)) +
+  geom_line(color = "tomato", size = 1.2) +
+  labs(
+    title = "Average Danceability by Year (Popular Songs)",
+    x = "Release Year",
+    y = "Danceability"
+  ) +
+  theme_minimal()
+```
+From the graph, we can see that the average danceabiliy of each year changes drastically every year, with the peak year of average danceability being 1982.
+
+```{r}
+#| code-fold: true
+combined_df |>
+  filter(!is.na(year)) |>
+  mutate(decade = (year %/% 10) * 10) |>
+  count(decade) |>
+  ggplot(aes(x = factor(decade), y = n)) +
+  geom_col(fill = "darkorchid") +
+  labs(
+    title = "Most Represented Decade in User Playlists",
+    x = "Decade",
+    y = "Number of Tracks"
+  ) +
+  theme_minimal()
+```
+We are able to see that the most represented decade in users playlists are in the 2010s to 2020, with users clearly not leaning towards adding older songs into their playlists.
+
+```{r}
+#| code-fold: true
+key_labels <- c("C", "C♯/D♭", "D", "D♯/E♭", "E", "F", 
+                "F♯/G♭", "G", "G♯/A♭", "A", "A♯/B♭", "B")
+combined_df |>
+  filter(!is.na(key)) |>
+  count(key) |>
+  mutate(key_label = factor(key_labels[key + 1], levels = key_labels)) |>
+  ggplot(aes(x = key_label, y = n, fill = key_label)) +
+  geom_col(show.legend = FALSE) +
+  coord_polar() +
+  labs(
+    title = "Key Frequency Among Songs",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal()
+```
+Since every song has different keys, I decided to look at all of them and we are able to see that C♯/D♭ is the most common key in songs.
+```{r}
+#| code-fold: true
+combined_df |>
+  mutate(duration_min = duration / 60000) |>
+  ggplot(aes(x = duration_min)) +
+  geom_histogram(binwidth = 0.25, fill = "steelblue", color = "white") +
+  coord_cartesian(xlim = c(0, 10)) +
+  labs(
+    title = "Distribution of Track Lengths",
+    x = "Duration (minutes)",
+    y = "Number of Tracks"
+  ) +
+  theme_minimal()
+```
+From the graph, we are able to see that the graph is bell shaped, with majority of songs being between 2.5-5 minutes long.
+```{r}
+#| code-fold: true
+combined_df |>
+  mutate(explicit = ifelse(explicit == 1, "Explicit", "Clean")) |>
+  ggplot(aes(x = explicit, y = popularity, fill = explicit)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Are Explicit Songs More Popular?",
+    x = "Song Type",
+    y = "Spotify Popularity"
+  ) +
+  scale_fill_manual(values = c("steelblue", "tomato")) +
+  theme_minimal()
+```
+For my first exploratory question, I was curious if explicit songs have an effect on how popular a song is, and from the graph we are able to see that explicit songs are slightly more popular than clean songs.
+```{r}
+#| code-fold: true
+explicit_by_decade <- combined_df |>
+  filter(!is.na(year)) |>
+  mutate(
+    decade = (year %/% 10) * 10,
+    explicit = ifelse(explicit == 1, "Explicit", "Clean")
+  ) |>
+  count(decade, explicit)
+ggplot(explicit_by_decade, aes(x = factor(decade), y = n, fill = explicit)) +
+  geom_col(position = "fill") +  # Use "fill" for proportions, "stack" for raw counts
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c("Clean" = "steelblue", "Explicit" = "firebrick")) +
+  labs(
+    title = "Proportion of Explicit Songs by Decade",
+    x = "Decade",
+    y = "Proportion of Songs",
+    fill = "Track Type"
+  ) +
+  theme_minimal()
+```
+I wanted to see the difference between the amount of songs from each decade that were explicit or clean, with explicit songs only becoming poopular around the 90's and now almost half the songs on playlists are explicit, showing how artists are evolving over time.\
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Building The Loverboy Playlist</span>
+With the anchor song being The Way Life Goes, from the combined dataset I was able to gather data on the songs in the same playlist, songs in the same key and tempo, songs from the same artist, and songs from the same year with similar audio. From there, I was able to look through each dataset and choose songs from each of them, giving me a diverse yet similar array of songs to choose to make my ultimate playlist.
+```{r}
+#| code-fold: true
+anchor_tracks <- combined_df |> 
+  filter(track_name == "The Way Life Goes (feat. Oh Wonder)", 
+         artist_name == "Lil Uzi Vert")
+same_playlist_songs <- combined_df |>
+  filter(playlist_id %in% anchor_tracks$playlist_id) |>
+  filter(track_id != anchor_tracks$track_id[1]) |>
+  distinct(track_id, track_name, artist_name, .keep_all = TRUE)
+
+same_playlist_songs |>
+  select(track_name, artist_name, playlist_name) |>
+  datatable(
+    caption = "Songs from the Same Playlist as the Anchor Track",
+    options = list(pageLength = 10, scrollX = TRUE)
+  )
+same_key_tempo <- combined_df |>
+  filter(key == anchor_tracks$key[1]) |>
+  filter(abs(tempo - anchor_tracks$tempo[1]) <= 5) |>
+  filter(track_id != anchor_tracks$track_id[1]) |>
+  distinct(track_id, track_name, artist_name, .keep_all = TRUE)
+
+same_key_tempo |>
+  select(track_name, artist_name, key, tempo) |>
+  datatable(
+    caption = "Songs with the Same Key and Similar Tempo",
+    options = list(pageLength = 10, scrollX = TRUE)
+  )
+same_artist <- combined_df |>
+  filter(artist_name == anchor_tracks$artist_name[1]) |>
+  filter(track_id != anchor_tracks$track_id[1]) |>
+  distinct(track_id, track_name, .keep_all = TRUE)
+
+same_artist |>
+  select(track_name, artist_name, album_name, year, popularity) |>
+  datatable(
+    caption = "Songs by the Same Artist as the Anchor Track",
+    options = list(pageLength = 10, scrollX = TRUE)
+  )
+same_year_similar_audio <- combined_df |>
+  filter(year == anchor_tracks$year[1]) |>
+  filter(
+    abs(danceability - anchor_tracks$danceability[1]) <= 0.1,
+    abs(energy - anchor_tracks$energy[1]) <= 0.1,
+    abs(acousticness - anchor_tracks$acousticness[1]) <= 0.1
+  ) |>
+  filter(track_id != anchor_tracks$track_id[1]) |>
+  distinct(track_id, track_name, artist_name, .keep_all = TRUE)
+
+same_year_similar_audio |>
+  select(track_name, artist_name, year, danceability, energy, acousticness) |>
+  datatable(
+    caption = "Songs from the Same Year with Similar Audio Features",
+    options = list(pageLength = 10, scrollX = TRUE)
+  )
+```
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">The Ultimate Playlist</span>
+After looking through all the songs with similar artists, playlists, tempos and more, I finally created my ultimate playlist and analyzed the energy, danceability, and valence of the tracks with a focus on the energy because I wanted it to progress throughout the playlist, gradually building emotion and in the end end making the listener feel empowered.
+```{r}
+#| code-fold: true
+all_candidates <- bind_rows(
+  same_playlist_songs,
+  same_key_tempo,
+  same_artist,
+  same_year_similar_audio,
+  anchor_tracks
+) |> 
+  distinct(track_id, .keep_all = TRUE)
+final_playlist <- all_candidates |> 
+  filter(track_name %in% c(
+    "The Way Life Goes (feat. Oh Wonder)",
+    "90210",
+    "夜曲",
+    "Runaway",
+    "Fallingforyou",
+    "Girls",
+    "It Takes Time",
+    "Hopeless",
+    "Love Galore",
+    "Feel No Ways",
+    "Nights",
+    "LOVE. FEAT. ZACARI."
+  ))
+final_playlist <- final_playlist |>
+  arrange(energy) |>
+  mutate(
+    order = row_number(),
+    track_name = factor(track_name, levels = track_name)
+  )
+final_playlist |>
+  select(track_name, artist_name, year, popularity, energy, danceability) |>
+  knitr::kable(caption = "Final Playlist: The Loverboy Collection")
+ggplot(final_playlist, aes(x = track_name)) +
+  geom_line(aes(y = energy), color = "orange", size = 1.2, group = 1) +
+  geom_line(aes(y = danceability), color = "steelblue", size = 1.2, group = 1) +
+  geom_line(aes(y = valence), color = "purple", size = 1.2, group = 1) +
+  labs(
+    title = "Ultimate Playlist: The Loverboy Collection",
+    subtitle = "Energy (orange), Danceability (blue), Valence (purple)",
+    x = "Track Name",
+    y = "Feature Value (0–1 scale)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+[^1]: Ching-Wei Chen, Paul Lamere, Markus Schedl, and Hamed Zamani. Recsys Challenge 2018: Automatic Music Playlist Continuation. In Proceedings of the 12th ACM Conference on Recommender Systems (RecSys ’18), 2018.
+
+
