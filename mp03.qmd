@@ -141,6 +141,7 @@ load_playlists <- function(start = 0, stop = 300000, step = 1000) {
   
   return(dplyr::bind_rows(playlist_list))
 }
+#reducing the number of files to be processed because there are too many files. approved by professor for performance reasons
 playlists <- load_playlists(start = 0, stop = 10000, step = 1000)
 playlists |>
   select(name, num_tracks, num_followers, duration_ms) |>
