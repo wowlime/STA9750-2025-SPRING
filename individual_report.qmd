@@ -3,7 +3,6 @@ title: "Final Individual Report - AI Impact on Jobs"
 format: html
 author: "Jackey Chen"
 code-fold: true
-
 ---
 
 ```{r, include=FALSE}
@@ -150,7 +149,7 @@ combined_data |>
 As we can see from this, many of the jobs that are at risk of being affected by AI is very task based repetitive jobs, such as Data Entry, Data Collector, and Mail Clerk. This may suggest that jobs that are more structured with routines have a higher chance of losing their jobs to AI. 
 
 ## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Visualization</span>
-```{r interactive_plot, echo=FALSE}
+```{r}
 #| code-fold: true
 #| message: false
 #| warning: false
