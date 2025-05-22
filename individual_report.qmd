@@ -1,0 +1,273 @@
+---
+title: "Final Individual Report - AI Impact on Jobs"
+format: html
+author: "Jackey Chen"
+code-fold: true
+---
+
+```{r, include=FALSE}
+library(readr)
+library(dplyr)
+library(stringr)
+library(data.table)
+library(scales)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(tidyr)
+library(readxl)
+library(jsonlite)
+library(purrr)
+library(DT)
+library(fuzzyjoin)
+library(ggplot2)
+library(plotly)
+ai <- read_csv("ai_threat_index.csv")
+bls <- read_csv("bls_projections.csv")
+```
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Introduction</span>
+Artificial Intelligence (AI) has been rapidly transforming how people live and work, with an increase in popularity in recent years and there is no sign of it slowing down anytime soon. With AI shaping how people work and more industries adopting AI, it has become an increasingly concerning question of when or how AI is going to affect the workforce. AI has become a fundamental part of many business operations, and as it continues to evolve it is not only affecting how the job gets done but also reshaping the structure of jobs altogether. My group wanted to investigate those concerns with analysis of how AI may impact jobs in the future and see how jobs may be changing, adapting, or getting completely removed with the growing reliance on AI. With more industries intergrating AI to boost efficiency in the workplace and to save money, we want to see the benefits and disadvantages of it. We aim to understand which job titles and industries are most at risk of automation, how education and skill level influence AI exposure, and whether AI is more likely to replace or transform future roles.
+
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Data Acquisition and Cleaning</span>
+To find answers to this question, we used the "AI Job Threat Index" from Kaggle [^1] and the Employment Projection Dataset published by the U.S. Bureau of Labor Statistics[^2].\
+The first dataset from Kaggle measures AI Job threat using a percentage representation of AI's influence over the job title and computing a ratio representing the workload distribution between tasks and AI models, with data collected from sources such as job analytics platforms, AI impact studies, and organizational reports. 
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+kable(head(ai, 10), caption = "Sample of Raw AI Threat Index Data")
+```
+The second dataset from the Bureau of Labor Statistics shows the employment in thousands of jobs by each occupation, including other useful data for our analysis such as employment from 2023 to the projected employment of the occupation by 2033, education level, work experience needed, and if on the job training is necessary. 
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+kable(head(bls, 10), caption = "Sample of Raw BLS Projections Data")
+```
+We then cleaned the data to make sure the columns align and combined these two sources using the fuzzyjoin library to standardize job titles in both datasets, used stringdist_inner_join() to compute similarities between job titles, and set a maximum distance threshold meaning job titles had to be at least a certain percent similar (in this case 60%) to be matched and combined. With the combined dataset, we were able to do our initial analysis of the data and find information that is useful for our research.
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+bls_clean <- bls |> 
+  select(-`Occupation Code`, -`Median Annual Wage 2024`, -`Education Code`, -`Workex Code`)
+
+#Clean the AI data
+ai_clean <- ai |> 
+  rename(job_title = `Job titiles`) |> 
+  mutate(job_title = str_to_lower(str_trim(job_title)))
+
+#Clean the Bureau of Labor Statistics data
+bls_clean <- bls_clean |> 
+  rename(job_title = `Occupation Title`) |> 
+  mutate(job_title = str_to_lower(str_trim(job_title)))
+
+#Combine the two datasets using fuzzy matching
+combined_data <- stringdist_inner_join(
+  ai_clean, bls_clean,
+  by = "job_title",
+  max_dist = 0.4,         
+  method = "jw"       
+)
+
+#see the structure of the combined data
+combined_data <- combined_data |> 
+  select(-job_title.y)
+combined_data <- combined_data |> 
+  rename(job_title = job_title.x)
+#glimpse(combined_data)
+#view(combined_data)
+
+#rename all columns in combined_data
+combined_data <- combined_data |>
+  select(-trCode) |>
+  rename(
+    Job_Title = job_title,
+    AI_Impact_Ratio = `AI Impact`,
+    Education_Level = `Typical Entry-Level Education`,
+    Job_Training = `Typical on-the-job Training`,
+    `Employment_Change_2023_2033` = `Employment Change, 2023-2033`,
+    `Employment_Percent_Change_2023_2033` = `Employment Percent Change, 2023-2033`,
+    `Work_Experience` = `Work Experience in a Related Occupation`,
+    `Occupational_Openings_Annual_Avg` = `Occupational Openings, 2023-2033 Annual Average`
+  )
+#names(combined_data)
+# Use str_to_title() from the stringr package to capitalize the first letter of each word
+combined_data$Job_Title <- stringr::str_to_title(combined_data$Job_Title)
+write_csv(combined_data, "data/combined_data.csv")
+kable(
+  head(combined_data, 10),
+  caption = "Sample of Combined AI + BLS Dataset"
+)
+```
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Initial Analysis</span>
+To find some answers to our overarching question of how jobs will be affected by AI, I wanted to do some initial analysis to see what jobs have the highest AI impact, their workload ratios, and the industries they are in.
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+combined_data |>
+  filter(is.finite(AI_Workload_Ratio)) |>
+  group_by(Domain) |>
+  summarise(avg_risk = mean(AI_Workload_Ratio, na.rm = TRUE)) |>
+  arrange(desc(avg_risk)) |>
+  kable(caption = "Average AI Workload Ratio by Industry")
+```
+From this data, we are able to see the average AI workload ratio for each industry, with all of them being around .20. This shows  that around 20% of the work employees do can be automated by AI in each industry, suggesting there is still plenty of work that cannot be automated yet and people are at a low risk of completely losing their jobs as workers are still necessary for the other 80% of work.
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+combined_data |>
+  filter(is.finite(AI_Workload_Ratio)) |>
+  summarise(
+    min_ratio = min(AI_Workload_Ratio, na.rm = TRUE),
+    max_ratio = max(AI_Workload_Ratio, na.rm = TRUE),
+    mean_ratio = mean(AI_Workload_Ratio, na.rm = TRUE),
+    median_ratio = median(AI_Workload_Ratio, na.rm = TRUE)
+  ) |>
+  kable(caption = "Summary Statistics: AI Workload Ratio")
+```
+We are able to see that the lowest amount of AI workload ratio is 3%, showing some industries may be resilient to AI in their field and AI cannot dominate all domains. Although it says the max ratio is 1, it may be an outlier because some jobs do not have as many tasks as others and it could be strongly skewed towards having all their tasks being taken over by AI. Our past conclusion is reinforced by this data, showing that the mean ratio of AI workload is 21%.
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+combined_data |>
+  distinct(Job_Title, .keep_all = TRUE) |>
+  filter(!is.na(AI_Impact_Ratio)) |>
+  mutate(
+    AI_Impact_Ratio = as.numeric(str_remove(AI_Impact_Ratio, "%")) / 100
+  ) |>
+  arrange(desc(AI_Impact_Ratio)) |>
+  select(Job_Title, AI_Impact_Ratio) |>
+  slice_head(n = 10) |>
+  kable(caption = "Top 10 Jobs with Highest AI Impact Ratio")
+```
+As we can see from this, many of the jobs that are at risk of being affected by AI is very task based repetitive jobs, such as Data Entry, Data Collector, and Mail Clerk. This may suggest that jobs that are more structured with routines have a higher chance of losing their jobs to AI. 
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Visualization</span>
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+domains <- unique(combined_data$Domain)
+# Build base plot
+p <- plot_ly()
+
+# Loop through each domain and add a trace
+for (i in seq_along(domains)) {
+  domain_data <- combined_data |>
+    filter(Domain == domains[i])
+  
+  p <- p %>%
+    add_trace(
+      data = domain_data,
+      x = ~AI_Workload_Ratio,
+      y = ~Employment_Change_2023_2033,
+      type = "scatter",
+      mode = "markers",
+      text = ~paste("Job:", Job_Title),
+      name = domains[i],
+      visible = ifelse(i == 1, TRUE, FALSE)  # Only first visible by default
+    )
+}
+
+# Add dropdown buttons
+buttons <- lapply(seq_along(domains), function(i) {
+  vis <- rep(FALSE, length(domains))
+  vis[i] <- TRUE
+  list(method = "restyle",
+       args = list("visible", vis),
+       label = domains[i])
+})
+
+# Final layout with dropdown
+p <- p %>%
+  layout(
+    title = "AI Risk vs. Employment Change by Industry",
+    xaxis = list(title = "AI Workload Ratio"),
+    yaxis = list(title = "Employment Change (2023–2033)"),
+    updatemenus = list(
+      list(
+        type = "dropdown",
+        active = 0,
+        buttons = buttons,
+        direction = "down",
+        x = 1.05,
+        y = 0.9
+      )
+    )
+  )
+
+p
+```
+Using this interactive scatter plot we are able to filter each industry and how AI Workload is affecting the predicted employment change, which helps us easily compare which jobs in each industry are at the highest risk and lowest risk. We are also able to compare how AI Impact is different between each industry, showing how resiliant they are to AI taking over their job. 
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+combined_data |>
+  filter(is.finite(AI_Workload_Ratio)) |>
+  group_by(Domain) |>
+  summarise(avg_ratio = mean(AI_Workload_Ratio, na.rm = TRUE)) |>
+  ggplot(aes(x = reorder(Domain, avg_ratio), y = avg_ratio, fill = Domain)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Average AI Workload Ratio by Industry",
+    x = "Industry",
+    y = "AI Workload Ratio"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+This graph shows that across all industries the average workload ratio is the similar, however jobs in domains such as Supply Chain & Logistics and Sales & Marketing show a slightly higher exposure, possibly because of the repetitive nature of their jobs. All throughout we are able to see that no industry is completly taken over by AI or is completely immune to it.
+
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+combined_data |>
+  filter(is.finite(AI_Workload_Ratio)) |>
+  ggplot(aes(x = Education_Level, y = AI_Workload_Ratio, fill = Education_Level)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(
+    title = "AI Workload Ratio by Education Level",
+    x = "Education Level",
+    y = "AI Risk"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+This plot shows that any education level is susceptible to AI automation, but some jobs that require lower education are more likely to have highly automatable jobs. While the median exposure to AI is similar throughout, there are higher outliers in jobs that require less education, suggesting that it is more common in jobs that require less education to be at a higher risk of losing their jobs to AI.
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Specific Question</span>
+My specific question to support the overarching question of "How will jobs be affected by AI?" is **What job titles and industries have the highest ai workload ratio and how will it affect the job market?**. This question supports and ties back, to the overarching question beacuse it quantifies AI impact of jobs using the AI workload ratio, showing what jobs are most at risk. We found the answers by using a scatter plot to show the correlation between a job's AI workload ratio and the projected employment changes from 2023 to 2033, broken down by each industry
+
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+ggplot(combined_data, aes(x = AI_Workload_Ratio, y = Employment_Change_2023_2033)) +
+  geom_point(alpha = 0.4, color = "steelblue") +
+  facet_wrap(~ Domain, scales = "free") +  # Facet by industry
+  labs(
+    title = "AI Risk vs. Employment Change by Industry",
+    x = "AI Workload Ratio",
+    y = "Employment Change (2023–2033)"
+  ) +
+  theme_minimal()
+```
+From our data, our findings is that AI risk is low to moderate across all industries. Most jobs have AI workload ratios between 0.1 to 0.4, and very few jobs exceed 0.5 indicating moderate AI risk overall. Some industries show high employment growth despite the AI risk. In jobs such as Data & IT and Medical & Healthcare, many jobs have moth moderate AI risk and positive employment changes, showing that in tech and healthcare AI might be an enhancement to the job and not a threat, allowing for more job opportunities Some industries show little to no growth or even shrinks, for example jobs related to Marketing, Clerical, or Sales jobs they are on the higher end of AI workload ratios. This may sugest that jobs that are task based may decline due to AI and are at risk. However, there are a few outliers in the data. In domains such as SUpply Chain and Logistics, we see some jobs with both high AI workload ratios and declining employment, suggesting that there may be higher threats of automation in these areas or Supply Chain & Logistic jobs are not as sought after in the future. Overall, Construction and Communication & PR roles show the lowest AI workload ratios while Marketing and Administrative roles display higher concentration of jbos around the 0.3-0.4 range, making them relatively more exposed. As AI adoption increases, we may see a shift where adaptive roles centered around interactions grow while roles focused on repetitive tasks decline, supporting that adaption is necessary across all industries to not be left behind.
+
+## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Conclusion</span>
+To wrap up our findings, we learned that AI risk is not evenly distributed. It varies depending on the level of education and type of task performed and the industry the job belongs in. Jobs that require repetitive rule based tasks that require low level education tend to be more susceptible to automation. Jobs that are more related to the creative and strategic fields are often shown lower on the AI workload ratios.
+Interestingly, some industries may actually benefit from AI, especially those that are already technology driven or data-dependent. For example, healthcare and tech related roles may use AI as a tool to enhance their decisions and improve efficiency rather than threaten job security. We also found that AI does not always replace jobs outright. In many cases, it is used to transform the work done by humans making some tasks faster, more accurate, and less labor intensive. This shows that although future jobs may have the same name, their job descriptions may change to better intergrate automation. 
+Lastly our analysis highlights that education and wage plays a role into AI exposure as well. Jobs that require higher education or offer higher salaries are less at first of AI taking over. These roles are more likely to involve creativity, leadership, or decision making that AI cannot replicate. This suggests that investing in education and having high digital literacy will be essential when trying to navigate an AI driven job market. In conclusion, AI is already reshaping the workforce and being able to adapt is important in todays world.
+
+[^1]: https://www.kaggle.com/datasets/manavgupta92/from-data-entry-to-ceo-the-ai-job-threat-index
+[^2]: https://data.bls.gov/projections/occupationProj
