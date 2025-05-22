@@ -149,12 +149,11 @@ combined_data |>
 As we can see from this, many of the jobs that are at risk of being affected by AI is very task based repetitive jobs, such as Data Entry, Data Collector, and Mail Clerk. This may suggest that jobs that are more structured with routines have a higher chance of losing their jobs to AI. 
 
 ## <span style="border-bottom: 3px solid #ccc; padding-bottom: 5px;">Visualization</span>
-```{r}
+```{r interactive_plot, echo=FALSE}
 #| code-fold: true
 #| message: false
 #| warning: false
 domains <- unique(combined_data$Domain)
-# Build base plot
 p <- plot_ly()
 
 # Loop through each domain and add a trace
@@ -171,20 +170,20 @@ for (i in seq_along(domains)) {
       mode = "markers",
       text = ~paste("Job:", Job_Title),
       name = domains[i],
-      visible = ifelse(i == 1, TRUE, FALSE)  # Only first visible by default
+      visible = ifelse(i == 1, TRUE, FALSE)
     )
 }
 
-# Add dropdown buttons
+# Add dropdown menu buttons
 buttons <- lapply(seq_along(domains), function(i) {
   vis <- rep(FALSE, length(domains))
   vis[i] <- TRUE
-  list(method = "restyle",
-       args = list("visible", vis),
-       label = domains[i])
+  list(
+    method = "restyle",
+    args = list("visible", vis),
+    label = domains[i]
+  )
 })
-
-# Final layout with dropdown
 p <- p %>%
   layout(
     title = "AI Risk vs. Employment Change by Industry",
@@ -203,6 +202,7 @@ p <- p %>%
   )
 
 p
+```
 ```
 Using this interactive scatter plot we are able to filter each industry and how AI Workload is affecting the predicted employment change, which helps us easily compare which jobs in each industry are at the highest risk and lowest risk. We are also able to compare how AI Impact is different between each industry, showing how resiliant they are to AI taking over their job. 
 ```{r}
